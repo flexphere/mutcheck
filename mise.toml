@@ -1,0 +1,27 @@
+[tools]
+go = "1.26.4"
+golangci-lint = "2.12.2"
+
+# 本体と omnicheck は別 module なので、それぞれで実行する
+
+[tasks.build]
+description = "mutcheck をビルドする"
+run = "go build -o mutcheck ."
+
+[tasks.test]
+description = "テストを実行する"
+run = [
+  "go test ./...",
+  "cd omnicheck && go test ./...",
+]
+
+[tasks.lint]
+description = "golangci-lint を実行する"
+run = [
+  "golangci-lint run ./...",
+  "cd omnicheck && golangci-lint run --config ../.golangci.yml ./...",
+]
+
+[tasks.check]
+description = "CI と同じ確認（lint と test）"
+depends = ["lint", "test"]

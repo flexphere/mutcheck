@@ -1,0 +1,9 @@
+# go build で作るバイナリ
+/mutcheck
+/omnicheck/example/example
+
+# omnicheck の実行結果
+omnicheck.json
+
+# グローバルの gitignore で除外していても、CI が go と golangci-lint のバージョンを読むので管理する
+!mise.toml

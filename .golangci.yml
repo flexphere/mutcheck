@@ -1,0 +1,20 @@
+version: "2"
+
+run:
+  # testdata/fixture と omnicheck/example は解析対象のサンプルで、別 module なので ./... には入らない
+  timeout: 5m
+
+linters:
+  # errcheck / govet / ineffassign / staticcheck / unused
+  default: standard
+  settings:
+    errcheck:
+      # 出力は stdout・bytes.Buffer・ハッシュへの書き込みで、失敗しても扱いようがないので見ない
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+formatters:
+  enable:
+    - gofmt
