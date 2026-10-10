@@ -293,7 +293,7 @@ mise run check    # lint と test（CI と同じ）
 mise run build    # ./mutcheck をビルド
 ```
 
-本体と `omnicheck` は別 module なので、`test` と `lint` はそれぞれで実行する。
+本体と `omnicheck` は別 module なので、`test` と `lint` はそれぞれで実行する。`testdata/fixture` と `omnicheck/example` は解析対象のサンプルなので対象外。
 
 workflow が使う action は、[gh-actions-lock](https://github.com/github/gh-actions-lock) でコミットに固定している（`.github/workflows/actions.lock`）。workflow の `uses` を追加・変更したときは、拡張を入れて lockfile を更新する。
 
@@ -301,6 +301,6 @@ workflow が使う action は、[gh-actions-lock](https://github.com/github/gh-a
 gh extension install github/gh-actions-lock
 gh actions-lock            # workflow を走査して lockfile を更新する
 gh actions-lock --relock   # 固定しているバージョンを上流の最新コミットに上げる
-````testdata/fixture` と `omnicheck/example` は解析対象のサンプルなので対象外。
+```
 
 `testdata/fixture` に書き方のパターンを1関数1トランザクションで並べ、`analyze_test.go` に期待値を書いている。
