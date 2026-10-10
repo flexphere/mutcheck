@@ -94,6 +94,13 @@ type Tx struct {
 	Encl    *ssa.Function
 	Bodies  []*ssa.Function // 本体の候補。関数値で渡されて複数に解決された場合は最大値をとる
 	Summary *Summary
+	Callers []TxCaller // トランザクションを始める関数を直接呼んでいる箇所（JSON 出力用）
+}
+
+// TxCaller はトランザクションを始める関数の呼び出し元。Pos は「パス:行」
+type TxCaller struct {
+	Pos  string
+	Func string
 }
 
 type loopInfo struct {

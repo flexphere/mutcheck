@@ -438,3 +438,21 @@ func (w *parentWriter) Save(ctx context.Context, tx *spanner.ReadWriteTransactio
 func callWithTx(ctx context.Context, tx *spanner.ReadWriteTransaction, f func(context.Context, *spanner.ReadWriteTransaction) error) error {
 	return f(ctx, tx)
 }
+
+// txRunner はトランザクションを始めるメソッドを持つ interface。InvokeTx の呼び出しが RunTx の呼び出し元になる。
+type txRunner interface {
+	RunTx(ctx context.Context, c *spanner.Client)
+}
+
+type parentSaver struct{}
+
+func (parentSaver) RunTx(ctx context.Context, c *spanner.Client) {
+	c.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		p := &model.Parent{}
+		return tx.BufferWrite([]*spanner.Mutation{p.Insert(ctx)})
+	})
+}
+
+func InvokeTx(ctx context.Context, c *spanner.Client, r txRunner) {
+	r.RunTx(ctx, c)
+}

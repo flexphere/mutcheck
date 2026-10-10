@@ -68,25 +68,64 @@ func (a *Analyzer) Coverage() (unreached, outside []WriteSite) {
 }
 
 func (a *Analyzer) unreachedHint(fn *ssa.Function) string {
-	// クロージャは外側の関数で判断する
-	root := fn
-	for root.Parent() != nil {
-		root = root.Parent()
-	}
+	root := outermost(fn)
 	if n := len(a.callers[root]); n > 0 {
 		c := a.callers[root][0]
 		return "呼び出し元はあるがトランザクションから辿れない（例: " + a.shortPos(c.Pos()) + " " + shortFunc(c.Parent().String()) + "）"
 	}
-	if recv := root.Signature.Recv(); recv != nil {
-		for _, c := range a.invokes[root.Name()] {
-			iface, ok := c.Common().Value.Type().Underlying().(*types.Interface)
-			if ok && types.Implements(recv.Type(), iface) {
-				return "interface 経由の呼び出しはあるがトランザクションから辿れない（例: " + a.shortPos(c.Pos()) + " " + shortFunc(c.Parent().String()) + "）"
-			}
+	if root.Signature.Recv() != nil {
+		if sites := a.invokeCallers(root); len(sites) > 0 {
+			c := sites[0]
+			return "interface 経由の呼び出しはあるがトランザクションから辿れない（例: " + a.shortPos(c.Pos()) + " " + shortFunc(c.Parent().String()) + "）"
 		}
 		return "interface 経由でも呼ばれていない（未使用の可能性）"
 	}
 	return "呼び出し元なし（未使用の可能性）"
+}
+
+// outermost はクロージャなら外側の関数を返す。呼び出し元は外側の関数で判断する。
+func outermost(fn *ssa.Function) *ssa.Function {
+	for fn.Parent() != nil {
+		fn = fn.Parent()
+	}
+	return fn
+}
+
+// invokeCallers は、メソッド fn を interface 経由で呼んでいそうな箇所を返す。
+// メソッド名が同じで、fn の受け手の型がその interface を実装しているものを拾う（実際には別の実装が呼ばれることもある）。
+func (a *Analyzer) invokeCallers(fn *ssa.Function) []ssa.CallInstruction {
+	recv := fn.Signature.Recv()
+	if recv == nil {
+		return nil
+	}
+	var sites []ssa.CallInstruction
+	for _, c := range a.invokes[fn.Name()] {
+		iface, ok := c.Common().Value.Type().Underlying().(*types.Interface)
+		if ok && types.Implements(recv.Type(), iface) {
+			sites = append(sites, c)
+		}
+	}
+	return sites
+}
+
+// TxCallers は、トランザクションを始める関数（クロージャなら外側の関数）を直接呼んでいる箇所を返す。
+// 呼び出し元の行にトランザクションのコストを出すためのもので、1 段だけ辿る。
+func (a *Analyzer) TxCallers(tx *Tx) []TxCaller {
+	root := outermost(tx.Encl)
+	sites := append(append([]ssa.CallInstruction{}, a.callers[root]...), a.invokeCallers(root)...)
+	var out []TxCaller
+	seen := map[string]bool{}
+	for _, c := range sites {
+		pos := a.filePos(c.Pos())
+		// 位置のない呼び出し（コンパイラが作るラッパー）は出さない
+		if pos == "" || seen[pos] {
+			continue
+		}
+		seen[pos] = true
+		out = append(out, TxCaller{Pos: pos, Func: funcLabel(c.Parent())})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Pos < out[j].Pos })
+	return out
 }
 
 func sortSites(sites []WriteSite) {

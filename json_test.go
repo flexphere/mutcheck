@@ -215,3 +215,34 @@ func TestFailedTxs(t *testing.T) {
 		t.Errorf("指定なし = %d, want 0", n)
 	}
 }
+
+// TestTxCallers は、トランザクションを始める関数の直接の呼び出し元を、静的な呼び出しと interface 経由の両方で拾うことを確かめる。
+func TestTxCallers(t *testing.T) {
+	a, txs := loadFixture(t, fixtureSchema)
+	b := &jsonBuilder{dir: fixtureDir}
+	for _, tt := range []struct {
+		fn   string
+		want []jsonCaller
+	}{
+		{"app.runTx", []jsonCaller{{Pos: "app/app.go:318", Func: "app.BodyParam"}}},
+		{"(*app.job).withTx", []jsonCaller{{Pos: "app/app.go:303", Func: "job.Run"}}},
+		{"(app.parentSaver).RunTx", []jsonCaller{{Pos: "app/app.go:457", Func: "app.InvokeTx"}}},
+		{"app.SimpleInsert", []jsonCaller{}},
+	} {
+		tx := txs[tt.fn]
+		if tx == nil {
+			t.Fatalf("%s: トランザクションが見つからない", tt.fn)
+		}
+		tx.Callers = a.TxCallers(tx)
+		got := b.tx(tx).Callers
+		if len(got) != len(tt.want) {
+			t.Errorf("%s: callers = %+v, want %+v", tt.fn, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("%s: callers = %+v, want %+v", tt.fn, got, tt.want)
+			}
+		}
+	}
+}

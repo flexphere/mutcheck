@@ -125,6 +125,9 @@ func main() {
 			a.Analyze(tx)
 		}
 		if shown {
+			if *format == "json" {
+				tx.Callers = a.TxCallers(tx)
+			}
 			targets = append(targets, tx)
 		}
 	}

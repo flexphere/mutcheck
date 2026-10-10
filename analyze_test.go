@@ -103,6 +103,7 @@ var txCases = []txCase{
 	{fn: "app.MixedDMLAndMutation", want: "5", wantDML: "3·rows(Parent)"},
 	{fn: "app.ValueReceiver", want: "6"},
 	{fn: "app.MethodValue", want: "5"},
+	{fn: "(app.parentSaver).RunTx", want: "5"},
 }
 
 func TestTransactions(t *testing.T) {

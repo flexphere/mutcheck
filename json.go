@@ -32,7 +32,9 @@ type jsonSummary struct {
 
 type jsonTx struct {
 	Func string `json:"func"`
-	Pos  string `json:"pos"`
+	// FuncFull は -func が照合する関数の完全な名前。^...$ で囲んで -func に渡すと、この関数のトランザクションだけを表示できる
+	FuncFull string `json:"func_full"`
+	Pos      string `json:"pos"`
 	// Verdict は fixed / dynamic / over / check
 	Verdict     string     `json:"verdict"`
 	CheckReason string     `json:"check_reason,omitempty"`
@@ -40,8 +42,15 @@ type jsonTx struct {
 	DML         []jsonStmt `json:"dml"`
 	Symbols     []jsonSym  `json:"symbols"`
 	Notes       []string   `json:"notes"`
+	// Callers はトランザクションを始める関数を直接呼んでいる箇所（1 段だけ。interface 経由は実装しうるものを含む）
+	Callers []jsonCaller `json:"callers"`
 	// Tree は Commit 分の内訳。-v のときだけ出す
 	Tree *jsonNode `json:"tree,omitempty"`
+}
+
+type jsonCaller struct {
+	Pos  string `json:"pos"`
+	Func string `json:"func"`
 }
 
 // jsonCost は mutation 数の式。動的件数は symbols の name で書く。
@@ -151,6 +160,7 @@ func (b *jsonBuilder) tx(tx *Tx) jsonTx {
 	names := newSymNames(append([]*Node{s.Tree}, s.Stmts...))
 	jt := jsonTx{
 		Func:        funcLabel(tx.Encl),
+		FuncFull:    tx.Encl.String(),
 		Pos:         fmt.Sprintf("%s:%d", relPath(tx.Pos.Filename, b.dir), tx.Pos.Line),
 		Verdict:     verdictKeys[verdict(s)],
 		CheckReason: s.ZeroReason(),
@@ -158,6 +168,10 @@ func (b *jsonBuilder) tx(tx *Tx) jsonTx {
 		DML:         []jsonStmt{},
 		Symbols:     []jsonSym{},
 		Notes:       []string{},
+		Callers:     []jsonCaller{},
+	}
+	for _, c := range tx.Callers {
+		jt.Callers = append(jt.Callers, jsonCaller{Pos: b.pos(c.Pos), Func: c.Func})
 	}
 	for _, n := range s.Stmts {
 		st := jsonStmt{Cost: jsonCostOf(n.Total(), names)}

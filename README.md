@@ -137,6 +137,7 @@ AI Agent や CI から読むための出力。テキスト出力と同じ解析�
   "transactions": [
     {
       "func": "OrderService.Place",
+      "func_full": "(*example.com/app.OrderService).Place",
       "pos": "app/order.go:42",
       "verdict": "dynamic",
       "commit": {
@@ -158,7 +159,10 @@ AI Agent や CI から読むための出力。テキスト出力と同じ解析�
         { "name": "items", "desc": "len(items) 回のループ", "pos": "app/order_repository.go:29" },
         { "name": "rows(Stock)", "desc": "Stock の影響を受ける行数", "pos": "app/stock_repository.go:88" }
       ],
-      "notes": []
+      "notes": [],
+      "callers": [
+        { "pos": "app/order_handler.go:31", "func": "OrderHandler.Post" }
+      ]
     }
   ],
   "summary": { "total": 1, "fixed": 0, "dynamic": 1, "over": 0, "check": 0, "with_notes": 0 },
@@ -170,6 +174,7 @@ AI Agent や CI から読むための出力。テキスト出力と同じ解析�
 ```
 
 - `limit`: Commit 1回、および DML 1文あたりの mutation 数の上限
+- `func_full`: `-func` が照合する関数の完全な名前。正規表現の記号をエスケープし `^...$` で囲んで `-func` に渡すと、この関数のトランザクションだけを表示できる
 - `verdict`: 判定。`fixed`（固定）/ `dynamic`（件数次第）/ `over`（超過）/ `check`（要確認）。`check` のときは `check_reason` に理由を入れる
 - `commit` / `dml[].cost`: mutation 数の式
   - `expr`: テキスト出力と同じ式
@@ -181,6 +186,7 @@ AI Agent や CI から読むための出力。テキスト出力と同じ解析�
 - `symbols`: 動的件数の凡例。式の中の名前（`name`）と、何の件数か（`desc`）・位置（`pos`）
 - `pos`: どこでも `-dir` からの相対パスと行（`app/order.go:42`）。テキスト出力は読みやすさのためファイル名だけにしているが、JSON はそのままファイルを開けるようにパスを付ける
 - `notes`: 注記。テキスト出力と違い `-v` がなくても出す
+- `callers`: トランザクションを始める関数（クロージャなら外側の関数）を直接呼んでいる箇所。1 段だけ辿る。interface 経由の呼び出しは、メソッド名が同じで受け手の型がその interface を実装しているものを拾うので、実際には別の実装が呼ばれる箇所も含みうる
 - `tree`（`-v` のときだけ）: 内訳の木。`kind` が `write`（書き込み。`unit` が1回あたりの mutation 数）/ `seq`（順に実行。合計は足し算）/ `alt`（排他的な分岐。`branches` が各分岐のラベルで、合計は項ごとの最大値。`optional` は書き込みのない経路もあること）/ `call`（呼び出し）/ `loop`（`sym` の回数だけ繰り返す）。どの節にも合計 `total` を入れる。DML の文ごとの木は `dml[].tree`
 - `coverage`（`-coverage` のときだけ）: 網羅チェックの結果。`unreached`（辿り着かない書き込み。`hint` が理由の手がかり）と `outside`（`ReadWriteTransaction` の外でのコミット。`Apply` は `cost` に mutation 数）
 - `load_errors`: パッケージの読み込み・型チェックのエラー（`package` / `pos` / `message`。位置のないエラーは `pos` なし）。エラーのあるパッケージの中のトランザクションは `transactions` に入らないので、空でなければ結果に取りこぼしがある
