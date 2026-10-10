@@ -242,6 +242,9 @@ func parseFiles(fset *token.FileSet, roots []*listedPackage, out []parsedPackage
 				return nil
 			}
 			f, err := parser.ParseFile(fset, path, src, parser.AllErrors|parser.SkipObjectResolution)
+			if f != nil {
+				stripByteLiterals(f)
+			}
 			files[jb.pkg][jb.file] = f
 			errs[jb.pkg][jb.file] = err
 			return nil
@@ -258,6 +261,36 @@ func parseFiles(fset *token.FileSet, roots []*listedPackage, out []parsedPackage
 			}
 		}
 	}
+}
+
+// minStrippedElts は stripByteLiterals が要素を空にする複合リテラルの要素数の下限。
+const minStrippedElts = 256
+
+// stripByteLiterals は整数・文字のリテラルだけが大量に並ぶ複合リテラル（古い protoc-gen-go が出力する
+// descriptor の []byte{0x0a, ...} など）の要素を空にする。
+// 型チェックは要素を 1 つずつ定数として調べ、SSA も要素ごとに代入を作るので、数 MB の生成コードがあると
+// どちらもそのパッケージだけで 0.1〜0.2 秒かかる。要素は数値の定数で mutation に関わらないので、空にしても結果は変わらない。
+// 文字列の並び（SQL やテーブル名の一覧として読むことがある）と、要素数で長さが決まる [...]T{...} は型が変わるので触らない。
+func stripByteLiterals(f *ast.File) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok || len(cl.Elts) < minStrippedElts {
+			return true
+		}
+		if at, ok := cl.Type.(*ast.ArrayType); ok {
+			if _, ok := at.Len.(*ast.Ellipsis); ok {
+				return true
+			}
+		}
+		for _, e := range cl.Elts {
+			lit, ok := e.(*ast.BasicLit)
+			if !ok || (lit.Kind != token.INT && lit.Kind != token.CHAR) {
+				return true
+			}
+		}
+		cl.Elts = nil
+		return false
+	})
 }
 
 // parseErrors はパースのエラーを 1 件ずつ packages.Error にする（packages.Load と同じ形）。
