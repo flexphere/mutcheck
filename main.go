@@ -218,12 +218,7 @@ func failedTxs(txs []*Tx, verdicts map[string]bool) int {
 // loadModule は dir のモジュール全体を読み込み、SSA を構築して Analyzer を返す。
 // interface の実装が読み込み範囲から漏れると黙って 0 になるので、常にモジュール全体を読み込む。
 func loadModule(dir string, schema *Schema, timer *timer) (*Analyzer, error) {
-	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedTypesSizes | packages.NeedModule,
-		Dir: dir,
-	}
-	pkgs, err := packages.Load(cfg, "./...")
+	pkgs, err := loadPackages(dir)
 	if err != nil {
 		return nil, err
 	}
