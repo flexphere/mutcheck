@@ -7,8 +7,10 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/cloudspannerecosystem/memefish"
 	memeast "github.com/cloudspannerecosystem/memefish/ast"
@@ -173,25 +175,31 @@ func isMockPkg(p *types.Package) bool {
 // interface 呼び出しの解決に使う具象型の一覧と、関数値・引数を辿るための呼び出し元とフィールド代入の索引。
 func (a *Analyzer) BuildImplIndex() {
 	a.funcs = a.moduleFuncs()
-	for _, fn := range a.funcs {
-		for _, b := range fn.Blocks {
-			for _, instr := range b.Instrs {
-				switch instr := instr.(type) {
-				case ssa.CallInstruction:
-					if callee := instr.Common().StaticCallee(); callee != nil {
-						a.callers[callee] = append(a.callers[callee], instr)
-					}
-					if c := instr.Common(); c.IsInvoke() {
-						a.invokes[c.Method.Name()] = append(a.invokes[c.Method.Name()], instr)
-					}
-				case *ssa.Store:
-					if fa, ok := instr.Addr.(*ssa.FieldAddr); ok {
-						if v := fieldVar(fa.X.Type(), fa.Field); v != nil {
-							a.fieldStores[v] = append(a.fieldStores[v], instr.Val)
-						}
-					}
-				}
+	// 命令の走査は関数ごとに独立しているので、関数を区切って並行に走査し、区切りの順に合わせる。
+	// 合わせる順が関数の順と同じなので、索引の中の並びは 1 つずつ走査した場合と変わらない
+	chunks := make([]implIndex, runtime.GOMAXPROCS(0))
+	size := (len(a.funcs) + len(chunks) - 1) / len(chunks)
+	var wg sync.WaitGroup
+	for i := range chunks {
+		lo, hi := min(i*size, len(a.funcs)), min((i+1)*size, len(a.funcs))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			chunks[i] = scanFuncs(a.funcs[lo:hi])
+		}()
+	}
+	wg.Wait()
+	for _, c := range chunks {
+		for _, e := range c.calls {
+			if e.callee != nil {
+				a.callers[e.callee] = append(a.callers[e.callee], e.instr)
 			}
+			if e.method != "" {
+				a.invokes[e.method] = append(a.invokes[e.method], e.instr)
+			}
+		}
+		for _, e := range c.stores {
+			a.fieldStores[e.field] = append(a.fieldStores[e.field], e.val)
 		}
 	}
 	for _, p := range a.modPkgs {
@@ -210,6 +218,52 @@ func (a *Analyzer) BuildImplIndex() {
 			a.candidates = append(a.candidates, T, types.NewPointer(T))
 		}
 	}
+}
+
+// implIndex は scanFuncs が集めた索引の項目。マップに入れる順を保つため、出てきた順のまま持つ。
+type implIndex struct {
+	calls  []indexedCall
+	stores []indexedStore
+}
+
+type indexedCall struct {
+	instr  ssa.CallInstruction
+	callee *ssa.Function // 静的に決まる呼び出し先。なければ nil
+	method string        // interface 経由の呼び出しのメソッド名。interface 経由でなければ空
+}
+
+type indexedStore struct {
+	field *types.Var
+	val   ssa.Value
+}
+
+// scanFuncs は fns の命令から、静的な呼び出し・interface 経由の呼び出し・フィールドへの代入を集める。
+func scanFuncs(fns []*ssa.Function) implIndex {
+	var idx implIndex
+	for _, fn := range fns {
+		for _, b := range fn.Blocks {
+			for _, instr := range b.Instrs {
+				switch instr := instr.(type) {
+				case ssa.CallInstruction:
+					c := instr.Common()
+					call := indexedCall{instr: instr, callee: c.StaticCallee()}
+					if c.IsInvoke() {
+						call.method = c.Method.Name()
+					}
+					if call.callee != nil || call.method != "" {
+						idx.calls = append(idx.calls, call)
+					}
+				case *ssa.Store:
+					if fa, ok := instr.Addr.(*ssa.FieldAddr); ok {
+						if v := fieldVar(fa.X.Type(), fa.Field); v != nil {
+							idx.stores = append(idx.stores, indexedStore{v, instr.Val})
+						}
+					}
+				}
+			}
+		}
+	}
+	return idx
 }
 
 // moduleFuncs はモジュール内の関数・メソッド・クロージャを列挙する。
@@ -233,13 +287,15 @@ func (a *Analyzer) moduleFuncs() []*ssa.Function {
 			case *ssa.Function:
 				visit(m)
 			case *ssa.Type:
-				for _, T := range []types.Type{m.Type(), types.NewPointer(m.Type())} {
-					ms := a.prog.MethodSets.MethodSet(T)
-					for i := 0; i < ms.Len(); i++ {
-						fn := a.prog.MethodValue(ms.At(i))
-						if fn != nil && fn.Pkg == p {
-							visit(fn)
-						}
+				// 型に宣言されたメソッドだけを集める。メソッドセットから引くと埋め込みのラッパーまで作るので遅い（ラッパーは対象外）。
+				// generic な型のメソッドは型引数ごとに作られるので、宣言そのものは対象にしない
+				n, ok := m.Type().(*types.Named)
+				if !ok || types.IsInterface(n) || n.TypeParams().Len() > 0 {
+					continue
+				}
+				for i := 0; i < n.NumMethods(); i++ {
+					if fn := a.prog.FuncValue(n.Method(i)); fn != nil && fn.Pkg == p {
+						visit(fn)
 					}
 				}
 			}
