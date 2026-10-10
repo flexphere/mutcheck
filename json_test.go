@@ -246,3 +246,21 @@ func TestTxCallers(t *testing.T) {
 		}
 	}
 }
+
+// TestReportDeterministic は同じコードなら何度解析しても同じ出力になることを確かめる。
+// パッケージやメンバーの走査順（マップの順）が出力に漏れると、interface の実装の候補の並びが実行ごとに変わる。
+func TestReportDeterministic(t *testing.T) {
+	var first string
+	for i := range 10 {
+		_, txs := fixtureTxs(t)
+		var b bytes.Buffer
+		if err := writeJSON(&b, (&jsonBuilder{dir: fixtureDir, verbose: true}).report(txs)); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = b.String()
+		} else if b.String() != first {
+			t.Fatalf("%d 回目の出力が 1 回目と違う", i+1)
+		}
+	}
+}

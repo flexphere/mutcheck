@@ -115,6 +115,9 @@ type Analyzer struct {
 	schema    *Schema
 	modPrefix string
 	modPkgs   []*ssa.Package
+	// modMembers は modPkgs ごとのメンバーを名前順に並べたもの。p.Members はマップで走査順が毎回変わり、
+	// interface の実装の候補の順（内訳の並び）が実行ごとに変わってしまうので、こちらを使う
+	modMembers [][]ssa.Member
 
 	funcs       []*ssa.Function
 	callers     map[*ssa.Function][]ssa.CallInstruction
@@ -154,6 +157,19 @@ func NewAnalyzer(prog *ssa.Program, schema *Schema, modPrefix string) *Analyzer 
 	for _, p := range prog.AllPackages() {
 		if a.inModule(p.Pkg) {
 			a.modPkgs = append(a.modPkgs, p)
+		}
+	}
+	// AllPackages も走査順が毎回変わるので、import パスの順にする
+	sort.Slice(a.modPkgs, func(i, j int) bool { return a.modPkgs[i].Pkg.Path() < a.modPkgs[j].Pkg.Path() })
+	a.modMembers = make([][]ssa.Member, len(a.modPkgs))
+	for i, p := range a.modPkgs {
+		names := make([]string, 0, len(p.Members))
+		for name := range p.Members {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			a.modMembers[i] = append(a.modMembers[i], p.Members[name])
 		}
 	}
 	return a
@@ -202,8 +218,8 @@ func (a *Analyzer) BuildImplIndex() {
 			a.fieldStores[e.field] = append(a.fieldStores[e.field], e.val)
 		}
 	}
-	for _, p := range a.modPkgs {
-		for _, m := range p.Members {
+	for i := range a.modPkgs {
+		for _, m := range a.modMembers[i] {
 			t, ok := m.(*ssa.Type)
 			if !ok {
 				continue
@@ -281,8 +297,8 @@ func (a *Analyzer) moduleFuncs() []*ssa.Function {
 			visit(anon)
 		}
 	}
-	for _, p := range a.modPkgs {
-		for _, m := range p.Members {
+	for i, p := range a.modPkgs {
+		for _, m := range a.modMembers[i] {
 			switch m := m.(type) {
 			case *ssa.Function:
 				visit(m)
