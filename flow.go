@@ -380,7 +380,7 @@ func (a *Analyzer) implsOf(common *ssa.CallCommon) []*ssa.Function {
 	key := named.String() + "." + common.Method.Name()
 	impls, ok := a.implCache[key]
 	if !ok {
-		for _, cand := range a.candidates {
+		for _, cand := range a.candidatesWithMethod(common.Method.Name()) {
 			if !types.Implements(cand, iface) {
 				continue
 			}
@@ -395,6 +395,27 @@ func (a *Analyzer) implsOf(common *ssa.CallCommon) []*ssa.Function {
 		a.implCache[key] = impls
 	}
 	return impls
+}
+
+// candidatesWithMethod は、name という名前のメソッドを持つ具象型の候補を candidates の順で返す。
+// interface を実装する型は呼ばれたメソッドを必ず持つので、types.Implements を当てる前にこれで絞る
+// （候補は数千あり、interface ごとに全部へ types.Implements を当てると解析の時間の多くを占める）。
+func (a *Analyzer) candidatesWithMethod(name string) []types.Type {
+	if a.byMethod == nil {
+		a.byMethod = map[string][]types.Type{}
+		for _, cand := range a.candidates {
+			ms := a.prog.MethodSets.MethodSet(cand)
+			seen := map[string]bool{}
+			for i := 0; i < ms.Len(); i++ {
+				n := ms.At(i).Obj().Name()
+				if !seen[n] {
+					seen[n] = true
+					a.byMethod[n] = append(a.byMethod[n], cand)
+				}
+			}
+		}
+	}
+	return a.byMethod[name]
 }
 
 // funcCandidates は関数値 v として呼ばれうる関数を、引数・捕捉変数・フィールドへの代入を遡って集める。

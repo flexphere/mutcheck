@@ -126,6 +126,7 @@ type Analyzer struct {
 	inProgress map[*ssa.Function]bool
 	loops      map[*ssa.Function][]loopInfo
 	candidates []types.Type
+	byMethod   map[string][]types.Type // メソッド名から、そのメソッドを持つ candidates（candidatesWithMethod が作る）
 	implCache  map[string][]*ssa.Function
 
 	// LoadErrors はパッケージの読み込み・型チェックのエラー（loadModule が入れる）。エラーのあるパッケージは解析から漏れる
