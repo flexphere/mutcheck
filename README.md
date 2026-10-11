@@ -1,4 +1,4 @@
-# mutcheck (PoC)
+# mutcheck
 
 Go のコードから Spanner の `ReadWriteTransaction` を辿り、トランザクションごとの mutation 数を schema.sql から見積もる。
 

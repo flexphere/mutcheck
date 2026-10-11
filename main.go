@@ -1,5 +1,5 @@
 // mutcheck は Go のコードから Spanner の ReadWriteTransaction を辿り、
-// トランザクションごとの mutation 数を schema.sql から見積もる PoC。
+// トランザクションごとの mutation 数を schema.sql から見積もるツール。
 package main
 
 import (
