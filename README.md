@@ -304,3 +304,7 @@ gh actions-lock --relock   # 固定しているバージョンを上流の最新
 ```
 
 `testdata/fixture` に書き方のパターンを1関数1トランザクションで並べ、`analyze_test.go` に期待値を書いている。
+
+## ライセンス
+
+MIT（`LICENSE`）
